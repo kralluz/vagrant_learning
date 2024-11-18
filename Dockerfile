@@ -15,11 +15,11 @@ RUN apt-get update && apt-get install -y \
 
 # Criar diretórios necessários para o DHCP
 RUN mkdir -p /etc/dhcp /var/lib/dhcp /var/run/dhcpd
-
+ 
 # Criar o arquivo dhcpd.leases vazio
 RUN touch /var/lib/dhcp/dhcpd.leases
 
-# Copiar o arquivo de configuração padrão
+# Copiar o arquivo de configuração padrãos
 COPY dhcpd.conf /etc/dhcp/dhcpd.conf
 
 # Expor a porta padrão do DHCP
