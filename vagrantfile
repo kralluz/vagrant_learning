@@ -1,0 +1,27 @@
+Vagrant.configure("2") do |config|
+    config.vm.box = "generic/alpine38"
+  
+    # Não especifica o nome da interface, deixando o VirtualBox escolher automaticamente a interface correta
+    config.vm.network 'public_network',
+  
+    config.vm.provider "virtualbox" do |vb|
+        # define a memoria em 4GB
+        vb.memory = "4024"
+        # define a quantidade de cpus em 4
+        vb.cpus = "4"
+        # define o nome da maquina virtual
+        vb.name = "alpine"
+    end
+  
+    config.vm.provision "shell", inline: <<-SHELL
+      # apk update
+      # apk add isc-dhcp-server
+      # apk add bind
+      # apk add samba
+      # apk add vsftpd
+      # apk add nfs-utils
+    SHELL
+  end
+
+
+  
