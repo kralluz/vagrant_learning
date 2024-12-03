@@ -1,27 +1,75 @@
-Vagrant.configure("2") do |config|
-    config.vm.box = "generic/alpine38"
-  
-    # Não especifica o nome da interface, deixando o VirtualBox escolher automaticamente a interface correta
-    config.vm.network 'public_network',
-  
-    config.vm.provider "virtualbox" do |vb|
-        # define a memoria em 4GB
-        vb.memory = "4024"
-        # define a quantidade de cpus em 4
-        vb.cpus = "4"
-        # define o nome da maquina virtual
-        vb.name = "alpine"
+	Vagrant.configure("2") do |config|
+  config.vm.define "server" do |server|
+    server.vm.box = "ubuntu/bionic64"  # Usando Ubuntu Server 18.04 LTS
+    # Interface Pública (Bridge) para acesso à internet
+    server.vm.network "public_network", bridge: 'enp0s9', 
+                                      auto_config: true, 
+                                      type: "bridge"
+
+    # Interface Privada (Rede Interna) para DHCP e DNS
+    server.vm.network "private_network", ip: "172.16.106.1", 
+                                      virtualbox__intnet: "intnet"
+
+    server.vm.provider "virtualbox" do |vb|
+      vb.memory = "1024"               # 1GB de memória
+      vb.cpus = "1"                    # 1 CPUs
+      vb.name = "ubuntu-server"        # Nome da VM
+      vb.customize ["modifyvm", :id, "--nictype2", "Am79C973"]  # Opcional: Define o tipo de adaptador
     end
-  
-    config.vm.provision "shell", inline: <<-SHELL
-      # apk update
-      # apk add isc-dhcp-server
-      # apk add bind
-      # apk add samba
-      # apk add vsftpd
-      # apk add nfs-utils
+
+    server.vm.provision "shell", inline: <<-SHELL
+      # Atualizar pacotes
+      apt-get update
+      apt-get upgrade -y
+
+      # Criar o usuário klz
+      useradd -m klz
+      echo "klz:123456789" | chpasswd
+      usermod -aG sudo klz
+
+      # Instalar serviços necessários
+      apt-get install -y isc-dhcp-server bind9 bind9utils bind9-doc dnsutils net-tools samba vsftpd nfs-kernel-server
+
+      # Configuração do servidor DNS
+      cat > /etc/bind/named.conf.options << EOF
+options {
+  directory "/var/cache/bind";
+
+  forwarders {
+    8.8.8.8;
+    8.8.4.4;
+  };
+
+  allow-query { any; };
+};
+EOF
+
+      # Reiniciar o serviço DNS
+      systemctl restart bind9
+
+      # Configuração do servidor DHCP
+      cat > /etc/dhcp/dhcpd.conf << EOF
+subnet 172.16.106.0 netmask 255.255.255.0 {
+  range 172.16.106.100 172.16.106.200;
+  option routers 172.16.106.1;
+  option domain-name-servers 172.16.106.1;
+  option broadcast-address 172.16.106.255;
+  default-lease-time 600;
+  max-lease-time 7200;
+}
+EOF
+
+      # Configurar a interface de rede correta para o ISC DHCP Server
+      echo "INTERFACESv4=\"enp0s9\"" > /etc/default/isc-dhcp-server
+
+      # Reiniciar o serviço DHCP
+      systemctl restart isc-dhcp-server
+
+      # Habilitar os serviços para iniciarem automaticamente
+      systemctl enable bind9
+      systemctl enable isc-dhcp-server
     SHELL
   end
 
 
-  
+end
