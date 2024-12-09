@@ -1,75 +1,120 @@
-	Vagrant.configure("2") do |config|
+Vagrant.configure("2") do |config|
+  # Definição da VM Server
   config.vm.define "server" do |server|
-    server.vm.box = "ubuntu/bionic64"  # Usando Ubuntu Server 18.04 LTS
-    # Interface Pública (Bridge) para acesso à internet
-    server.vm.network "public_network", bridge: 'enp0s9', 
-                                      auto_config: true, 
-                                      type: "bridge"
+    server.vm.box = "ubuntu/bionic64" # Sistema operacional (Ubuntu 18.04 LTS)
+    server.vm.hostname = "dhcp-bind-server"
 
-    # Interface Privada (Rede Interna) para DHCP e DNS
-    server.vm.network "private_network", ip: "172.16.106.1", 
-                                      virtualbox__intnet: "intnet"
+    # Configuração da rede privada com IP fixo
+    server.vm.network "private_network", ip: "192.168.56.1", virtualbox__intnet: "dhcp_network"
 
     server.vm.provider "virtualbox" do |vb|
-      vb.memory = "1024"               # 1GB de memória
-      vb.cpus = "1"                    # 1 CPUs
-      vb.name = "ubuntu-server"        # Nome da VM
-      vb.customize ["modifyvm", :id, "--nictype2", "Am79C973"]  # Opcional: Define o tipo de adaptador
+      vb.name = "dhcp-bind-server"
     end
 
+    # Provisionamento da VM Server
     server.vm.provision "shell", inline: <<-SHELL
       # Atualizar pacotes
-      apt-get update
-      apt-get upgrade -y
+      sudo apt-get update
 
-      # Criar o usuário klz
-      useradd -m klz
-      echo "klz:123456789" | chpasswd
-      usermod -aG sudo klz
+      # Instalar isc-dhcp-server e bind9
+      sudo apt-get install -y isc-dhcp-server bind9 bind9utils bind9-doc
 
-      # Instalar serviços necessários
-      apt-get install -y isc-dhcp-server bind9 bind9utils bind9-doc dnsutils net-tools samba vsftpd nfs-kernel-server
+      ## Configuração do DHCP Server
+      sudo sed -i 's/INTERFACESv4=""/INTERFACESv4="enp0s8"/' /etc/default/isc-dhcp-server
 
-      # Configuração do servidor DNS
-      cat > /etc/bind/named.conf.options << EOF
-options {
-  directory "/var/cache/bind";
+      sudo bash -c 'cat > /etc/dhcp/dhcpd.conf <<EOL
+default-lease-time 600;
+max-lease-time 7200;
+authoritative;
 
-  forwarders {
-    8.8.8.8;
-    8.8.4.4;
-  };
-
-  allow-query { any; };
-};
-EOF
-
-      # Reiniciar o serviço DNS
-      systemctl restart bind9
-
-      # Configuração do servidor DHCP
-      cat > /etc/dhcp/dhcpd.conf << EOF
-subnet 172.16.106.0 netmask 255.255.255.0 {
-  range 172.16.106.100 172.16.106.200;
-  option routers 172.16.106.1;
-  option domain-name-servers 172.16.106.1;
-  option broadcast-address 172.16.106.255;
-  default-lease-time 600;
-  max-lease-time 7200;
+subnet 192.168.56.0 netmask 255.255.255.0 {
+  range 192.168.56.10 192.168.56.100;
+  option routers 192.168.56.1;
+  option domain-name-servers 192.168.56.1; # Apontando para o servidor DNS local
 }
-EOF
+EOL'
 
-      # Configurar a interface de rede correta para o ISC DHCP Server
-      echo "INTERFACESv4=\"enp0s9\"" > /etc/default/isc-dhcp-server
+      sudo systemctl restart isc-dhcp-server
+      sudo systemctl enable isc-dhcp-server
 
-      # Reiniciar o serviço DHCP
-      systemctl restart isc-dhcp-server
+      ## Configuração do BIND9
+      sudo cp /etc/bind/named.conf.options /etc/bind/named.conf.options.backup
 
-      # Habilitar os serviços para iniciarem automaticamente
-      systemctl enable bind9
-      systemctl enable isc-dhcp-server
+      sudo bash -c 'cat > /etc/bind/named.conf.options <<EOL
+options {
+    directory "/var/cache/bind";
+
+    listen-on { any; };
+    listen-on-v6 { any; };
+    allow-query { any; };
+    forwarders {
+        8.8.8.8;
+        8.8.4.4;
+    };
+    dnssec-validation auto;
+    auth-nxdomain no;
+    listen-on { any; };
+};
+EOL'
+
+      sudo bash -c 'cat > /etc/bind/named.conf.local <<EOL
+zone "example.local" {
+    type master;
+    file "/etc/bind/db.example.local";
+};
+EOL'
+
+      sudo cp /etc/bind/db.local /etc/bind/db.example.local
+      sudo sed -i 's/localhost./example.local./' /etc/bind/db.example.local
+      sudo sed -i 's/127.0.0.1;/192.168.56.1;/' /etc/bind/db.example.local
+      sudo sed -i 's/255.255.255.255/192.168.56.1/' /etc/bind/db.example.local
+
+      sudo named-checkconf
+      sudo named-checkzone example.local /etc/bind/db.example.local
+
+      sudo systemctl restart bind9
+      sudo systemctl enable bind9
+
+      ## Configuração do NFS
+      sudo apt-get install -y nfs-kernel-server
+      sudo mkdir -p /var/nfs/general
+      sudo chown nobody:nogroup /var/nfs/general
+
+      sudo bash -c 'echo "/var/nfs/general 192.168.56.0/24(rw,sync,no_subtree_check)" >> /etc/exports'
+
+      sudo exportfs -a
+      sudo systemctl restart nfs-kernel-server
     SHELL
   end
 
+  # Definição da VM Client
+  config.vm.define "client" do |client|
+    client.vm.box = "ubuntu/bionic64" # Sistema operacional (Ubuntu 18.04 LTS)
+    client.vm.hostname = "dhcp-bind-client"
 
+    # Configuração da rede privada para obter IP via DHCP
+    client.vm.network "private_network", type: "dhcp", virtualbox__intnet: "dhcp_network"
+
+    client.vm.provider "virtualbox" do |vb|
+      vb.name = "dhcp-bind-client"
+    end
+
+    # Provisionamento da VM Client
+    client.vm.provision "shell", inline: <<-SHELL
+      # Atualizar pacotes
+      sudo apt-get update
+
+      # Instalar utilitários de rede e NFS
+      sudo apt-get install -y dnsutils nfs-common
+
+      # Criar diretório local para montar o NFS
+      sudo mkdir -p /mnt/nfs_general
+
+      # Montar o NFS compartilhado
+      sudo mount 192.168.56.1:/var/nfs/general /mnt/nfs_general
+
+      # Adicionar entrada no fstab para montagem automática
+      echo "192.168.56.1:/var/nfs/general /mnt/nfs_general nfs defaults 0 0" | sudo tee -a /etc/fstab
+    SHELL
+  end
 end
