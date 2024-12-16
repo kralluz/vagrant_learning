@@ -12,12 +12,12 @@
 
 ## Objetivo
 
-O objetivo deste trabalho é provisionar duas máquinas virtuais (VMs) utilizando o Vagrant:
+Este trabalho visa a criação e configuração de duas máquinas virtuais (VMs) utilizando o Vagrant, automatizando a implementação de serviços de rede. O objetivo é que o usuário apenas execute os comandos necessários para inicializar as VMs e, em seguida, realize os testes de cada serviço conforme descrito neste guia.
 
-- **Server**: Configurado para fornecer serviços DHCP, DNS, FTP, Samba e NFS.
-- **Client**: Configurado para obter IP via DHCP, utilizar o DNS configurado no servidor e acessar os serviços FTP, Samba e NFS.
+- **Server**: Configurado para fornecer os serviços DHCP, DNS, FTP, Samba, NFS e Nginx.
+- **Client**: Configurado para obter IP via DHCP, utilizar o DNS configurado no servidor e acessar os serviços FTP, Samba, NFS e Nginx.
 
-Este guia ajuda a preparar o ambiente, explica cada parte do arquivo Vagrantfile e descreve como testar os serviços implementados.
+Este documento apresenta uma explicação detalhada do ambiente, orientações para subir as máquinas virtuais e instruções de teste de cada serviço configurado.
 
 ## Preparação do Ambiente
 
@@ -28,7 +28,7 @@ Este guia ajuda a preparar o ambiente, explica cada parte do arquivo Vagrantfile
      - **Recomendação**: Utilize a versão 6.1 do VirtualBox para maior compatibilidade.
 
 2. **Verificação da Instalação**:
-   - Execute os comandos abaixo para verificar se os softwares estão instalados corretamente:
+   - Verifique se os softwares estão instalados corretamente:
      ```bash
      vagrant --version
      vboxmanage --version
@@ -40,206 +40,139 @@ Este guia ajuda a preparar o ambiente, explica cada parte do arquivo Vagrantfile
      mkdir meu_projeto
      cd meu_projeto
      ```
-   - Inicialize o Vagrant no diretório:
-     ```bash
-     vagrant init
-     ```
-   - Substitua o arquivo `Vagrantfile` gerado pelo fornecido.
-   - No terminal, execute:
+   - Substitua o arquivo `Vagrantfile` pelo arquivo fornecido neste guia.
+
+4. **Iniciar as VMs**:
+   - No terminal, execute o comando abaixo para iniciar e configurar as máquinas virtuais automaticamente:
      ```bash
      vagrant up
      ```
-   - Este comando inicializa e configura as máquinas virtuais conforme especificado no `Vagrantfile`.
+   - Após este comando, as máquinas serão provisionadas com todos os serviços configurados automaticamente. Não é necessário executar comandos manuais dentro das VMs.
 
 ---
 
-## Estrutura do Vagrantfile
+## Testando os Serviços
 
-### Configuração da Máquina Virtual Server
+Após a inicialização das VMs, siga as etapas abaixo para verificar o funcionamento de cada serviço:
 
-1. **Definição da VM Server**:
-   ```ruby
-   config.vm.define "server" do |server|
-   ```
-   Define a máquina virtual chamada "server".
+### Serviço DHCP
 
-2. **Sistema Operacional**:
-   ```ruby
-   server.vm.box = "ubuntu/bionic64"
-   ```
-   Utiliza o Ubuntu 18.04 LTS como sistema operacional.
-
-3. **Hostname**:
-   ```ruby
-   server.vm.hostname = "dhcp-bind-server"
-   ```
-   Define o hostname como "dhcp-bind-server".
-
-4. **Rede Privada**:
-   ```ruby
-   server.vm.network "private_network", ip: "192.168.56.1", virtualbox__intnet: "dhcp_network"
-   ```
-   Configura uma rede privada com o IP fixo `192.168.56.1` e integra a interface de rede na rede "dhcp_network".
-
-5. **Provedor VirtualBox**:
-   ```ruby
-   server.vm.provider "virtualbox" do |vb|
-       vb.name = "dhcp-bind-server"
-   end
-   ```
-   Define o nome da VM no VirtualBox como "dhcp-bind-server".
-
-6. **Provisionamento do Sistema**:
-   ```ruby
-   server.vm.provision "shell", inline: <<-SHELL
-   ```
-   Executa comandos shell para provisionar a máquina com os serviços ISC-DHCP-Server, BIND9, FTP, Samba e NFS.
-
-### Configuração do ISC-DHCP-Server
-
-- **Atualização de pacotes**:
-  ```bash
-  sudo apt-get update
-  ```
-  Atualiza os pacotes do sistema.
-
-- **Instalação do servidor DHCP**:
-  ```bash
-  sudo apt-get install -y isc-dhcp-server
-  ```
-  Instala o serviço ISC-DHCP-Server.
-
-- **Configuração do arquivo `/etc/dhcp/dhcpd.conf`**:
-  Define a faixa de IPs, roteador e servidor DNS para a rede:
-  ```bash
-  subnet 192.168.56.0 netmask 255.255.255.0 {
-      range 192.168.56.10 192.168.56.100;
-      option routers 192.168.56.1;
-      option domain-name-servers 192.168.56.1;
-  }
-  ```
-
-- **Habilitação e reinício do serviço**:
-  ```bash
-  sudo systemctl restart isc-dhcp-server
-  sudo systemctl enable isc-dhcp-server
-  ```
-
-### Configuração do BIND9
-
-- **Instalação do BIND9**:
-  ```bash
-  sudo apt-get install -y bind9 bind9utils bind9-doc
-  ```
-
-- **Configuração das opções do BIND9**:
-  Edita o arquivo `/etc/bind/named.conf.options` para permitir consultas e configurar encaminhadores:
-  ```bash
-  options {
-      listen-on { any; };
-      allow-query { any; };
-      forwarders {
-          8.8.8.8;
-          8.8.4.4;
-      };
-  };
-  ```
-
-- **Criação de uma zona DNS**:
-  Adiciona a zona "example.local" no arquivo `/etc/bind/named.conf.local` e configura o arquivo de zona correspondente.
-
-- **Verificação e reinício**:
-  Verifica a configuração e reinicia o serviço:
-  ```bash
-  sudo named-checkconf
-  sudo named-checkzone example.local /etc/bind/db.example.local
-  sudo systemctl restart bind9
-  sudo systemctl enable bind9
-  ```
-
-### Testes do Lado do Servidor
-
-#### Verificar o serviço DHCP
-- Confirme que o serviço DHCP está ativo:
-  ```bash
-  sudo systemctl status isc-dhcp-server
-  ```
-- Verifique os leases de IP no arquivo de log:
-  ```bash
-  cat /var/lib/dhcp/dhcpd.leases
-  ```
-
-#### Verificar o serviço DNS
-- Teste uma consulta DNS local:
-  ```bash
-  dig @192.168.56.1 example.local
-  ```
-
----
-
-### Configuração da Máquina Virtual Client
-
-1. **Definição da VM Client**:
-   ```ruby
-   config.vm.define "client" do |client|
-   ```
-   Define a máquina virtual chamada "client".
-
-2. **Rede Privada (DHCP)**:
-   - Configura a interface de rede para obter IP via DHCP:
-     ```ruby
-     client.vm.network "private_network", type: "dhcp", virtualbox__intnet: "dhcp_network"
-     ```
-
-3. **Provisionamento da Máquina Client**:
-   - Atualiza pacotes e instala utilitários de rede necessários para acessar os serviços FTP, Samba e NFS:
+1. **No cliente**:
+   - Verifique se um IP foi atribuído automaticamente:
      ```bash
-     sudo apt-get update
-     sudo apt-get install -y dnsutils ftp samba-client nfs-common
+     ip addr show
+     ```
+   - O cliente deve receber um IP na faixa `192.168.56.10-192.168.56.100`.
+
+### Serviço DNS (BIND9)
+
+1. **No cliente**:
+   - Teste a resolução de nomes configurada no servidor DNS:
+     ```bash
+     dig example.local
+     ```
+   - O nome `example.local` deve ser resolvido com sucesso.
+
+### Serviço FTP
+
+1. **No cliente**:
+   - Conecte ao servidor FTP e liste os arquivos disponíveis:
+     ```bash
+     ftp 192.168.56.1
+     ```
+   - Use o usuário `anonymous` durante o login. Você deverá visualizar o arquivo `README.txt` no diretório compartilhado.
+
+
+### Serviço NFS
+
+1. **No servidor**:
+   - Verifique o status do serviço NFS:
+     ```bash
+     systemctl status nfs-kernel-server
      ```
 
-### Testes do Lado do Cliente
+2. **No cliente**:
+   - Monte o diretório compartilhado pelo servidor NFS:
+     ```bash
+     sudo mount 192.168.56.1:/srv/nfs_share /mnt
+     ```
+   - Após montar, crie um arquivo no diretório compartilhado:
+     ```bash
+     echo "Arquivo criado pelo cliente" | sudo tee /mnt/nfs_share/teste_cliente.txt
+     ```
 
-#### Verificar o serviço DHCP
-- Obtenha o IP atribuído automaticamente:
-  ```bash
-  ip addr show
-  ```
+3. **No servidor**:
+   - Verifique se o arquivo criado no cliente está disponível no servidor:
+     ```bash
+     ls /srv/nfs_share
+     ```
+   - O arquivo `teste_cliente.txt` deve aparecer na listagem.
 
-#### Verificar o serviço DNS
-- Teste a resolução de nomes:
-  ```bash
-  dig example.local
-  ```
+### Serviço Nginx
 
-#### Testar acesso FTP
-- Conecte ao servidor FTP:
-  ```bash
-  ftp 192.168.56.1
-  ```
+1. **No cliente**:
+   - Teste o acesso ao site estático servido pelo Nginx:
+     ```bash
+     curl http://192.168.56.1
+     ```
+   - A página deve exibir a mensagem "Bem-vindo ao Site Estático!". Você também pode acessar o site via navegador utilizando o IP do servidor.
 
-#### Testar acesso Samba
-- Liste os compartilhamentos Samba disponíveis:
-  ```bash
-  smbclient -L //192.168.56.1
-  ```
+2. **Verificação e Correção Manual (Caso Necessário)**:
+   - Se você já aplicou o Vagrantfile corrigido, mas ainda está enfrentando problemas com o Nginx, siga os passos abaixo para corrigir manualmente:
 
-#### Testar acesso NFS
-- Monte um diretório NFS compartilhado:
-  ```bash
-  sudo mount 192.168.56.1:/path/to/share /mnt
-  ```
+   - **Acesse a VM Server**:
+     ```bash
+     vagrant ssh server
+     ```
+
+   - **Verifique a Configuração do Nginx**:
+     - Abra o arquivo de configuração do site:
+       ```bash
+       sudo nano /etc/nginx/sites-available/site
+       ```
+     - Certifique-se de que o conteúdo está conforme o modelo abaixo:
+       ```nginx
+       server {
+           listen 80 default_server;
+           server_name _;
+
+           root /var/www/html/site;
+           index index.html;
+
+           location / {
+               try_files $uri $uri/ =404;
+           }
+       }
+       ```
+
+   - **Teste a Configuração do Nginx**:
+     ```bash
+     sudo nginx -t
+     ```
+     - Se houver erros, revise as mensagens exibidas para corrigir quaisquer problemas.
+
+   - **Reinicie o Nginx**:
+     ```bash
+     sudo systemctl restart nginx
+     ```
 
 ---
 
-## Conclusão
-
-Com as instruções acima, os serviços ISC-DHCP-Server, BIND9, FTP, Samba e NFS foram configurados e testados com sucesso em máquinas virtuais provisionadas pelo Vagrant. Caso ocorram problemas, revise as configurações e logs de cada serviço.
-
-### Referências e Documentações
+## Referências e Documentações
 - [Documentação do Vagrant](https://www.vagrantup.com/docs)
 - [Documentação do ISC-DHCP-Server](https://manpages.ubuntu.com/manpages/bionic/en/man8/dhcpd.8.html)
 - [Documentação do BIND9](https://bind9.readthedocs.io/en/latest/)
 - [Documentação do FTP (vsftpd)](https://security.appspot.com/vsftpd.html)
 - [Documentação do Samba](https://www.samba.org/samba/docs/)
 - [Documentação do NFS](https://wiki.linux-nfs.org/wiki/index.php/Main_Page)
+- [Documentação do Nginx](https://nginx.org/en/docs/)
+
+---
+
+## Conclusão
+
+Com o arquivo `Vagrantfile` fornecido, todo o processo de configuração é realizado automaticamente, permitindo que o usuário foque apenas nos testes de cada serviço. O provisionamento automatizado facilita a criação do ambiente, garantindo consistência e praticidade.
+
+Caso algum serviço não funcione corretamente, revise as configurações e logs correspondentes em cada máquina virtual. Utilize as referências para aprofundar o entendimento e solucionar eventuais problemas.
+
+Este guia demonstrou como implementar e testar os principais serviços de rede utilizando ferramentas modernas como o Vagrant, promovendo um aprendizado prático e eficaz sobre administração de redes.
