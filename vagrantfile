@@ -79,11 +79,29 @@ zone "example.local" {
 };
 EOL'
 
-      # Criar arquivo de zona
+      # Criar arquivo de zona com registros DNS
       sudo cp /etc/bind/db.local /etc/bind/db.example.local
-      sudo sed -i 's/localhost./example.local./' /etc/bind/db.example.local
-      sudo sed -i 's/127.0.0.1;/192.168.56.1;/' /etc/bind/db.example.local
-      sudo sed -i 's/255.255.255.255/192.168.56.1/' /etc/bind/db.example.local
+      sudo bash -c 'cat > /etc/bind/db.example.local <<EOL
+$TTL    604800
+@       IN      SOA     example.local. root.example.local. (
+                          2         ; Serial
+                     604800         ; Refresh
+                      86400         ; Retry
+                    2419200         ; Expire
+                     604800 )       ; Negative Cache TTL
+
+; Registros DNS
+@       IN      NS      ns1.example.local.
+@       IN      A       192.168.56.1
+ns1     IN      A       192.168.56.1
+
+; Registro CNAME
+www     IN      CNAME   example.local.
+
+; Registro MX (prioridade 10)
+@       IN      MX      10 mail.example.local.
+mail    IN      A       192.168.56.2
+EOL'
 
       # Verificar a configuração do BIND9
       sudo named-checkconf
@@ -146,7 +164,7 @@ server {
     index index.html;
 
     location / {
-        try_files \$uri \$uri/ =404;
+        try_files $uri $uri/ =404;
     }
 }
 EOL'
