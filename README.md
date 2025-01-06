@@ -14,8 +14,8 @@
 
 Este trabalho visa a criação e configuração de duas máquinas virtuais (VMs) utilizando o Vagrant, automatizando a implementação de serviços de rede. O objetivo é que o usuário apenas execute os comandos necessários para inicializar as VMs e, em seguida, realize os testes de cada serviço conforme descrito neste guia.
 
-- **Server**: Configurado para fornecer os serviços DHCP, DNS, FTP, Samba, NFS e Nginx.
-- **Client**: Configurado para obter IP via DHCP, utilizar o DNS configurado no servidor e acessar os serviços FTP, Samba, NFS e Nginx.
+- **Server**: Configurado para fornecer os serviços DHCP, DNS, FTP, NFS e Nginx.
+- **Client**: Configurado para obter IP via DHCP, utilizar o DNS configurado no servidor e acessar os serviços FTP, NFS e Nginx.
 
 Este documento apresenta uma explicação detalhada do ambiente, orientações para subir as máquinas virtuais e instruções de teste de cada serviço configurado.
 
